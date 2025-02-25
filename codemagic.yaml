@@ -1,45 +1,92 @@
 workflows:
-  ios-diagnostic:
-    name: iOS Diagnostic Build
-    instance_type: mac_mini_m1
+  android-workflow:
+    name: Android Build
+    instance_type: linux
     max_build_duration: 120
     environment:
       node: latest
-      xcode: latest
-      cocoapods: default
+      java: 11
     scripts:
-      - name: Project Diagnostics
+      - name: Install dependencies
+        script: npm install
+      - name: Build Android
         script: |
-          echo "===== ENVIRONMENT INFO ====="
-          node -v
-          npm -v
-          xcodebuild -version
-          pod --version
-          
-          echo "===== PROJECT STRUCTURE ====="
-          ls -la
-          
-          echo "===== PACKAGE.JSON ====="
-          cat package.json
-          
-          echo "===== CHECK IOS DIRECTORY ====="
-          if [ -d "ios" ]; then
-            echo "iOS directory exists:"
-            ls -la ios/
-          else
-            echo "iOS directory does not exist, creating it"
-            npx react-native init temp_project --template react-native-template-typescript
-            cp -R temp_project/ios ./ios
-            rm -rf temp_project
-            echo "Created iOS directory:"
-            ls -la ios/
-          fi
-      
-      - name: Android Alternative
+          cd android
+          ./gradlew assembleDebug
+    artifacts:
+      - android/app/build/outputs/**/*.apk
+
+  web-workflow:
+    name: Web Build
+    instance_type: linux
+    max_build_duration: 120
+    environment:
+      node: latest
+    scripts:
+      - name: Install dependencies
         script: |
-          echo "===== CHECKING ANDROID SETUP ====="
-          if [ -d "android" ]; then
-            echo "Android directory exists:"
-            ls -la android/
-            echo "We could build for Android instead as a faster alternative"
-          fi
+          npm install
+          npm install --save react-native-web react-dom
+          npm install --save-dev webpack webpack-cli webpack-dev-server babel-loader html-webpack-plugin @babel/core @babel/preset-env @babel/preset-react
+      - name: Create webpack config
+        script: |
+          cat > webpack.config.js << 'EOL'
+          const path = require('path');
+          const HtmlWebpackPlugin = require('html-webpack-plugin');
+
+          module.exports = {
+            entry: './index.js',
+            output: {
+              path: path.join(__dirname, 'dist'),
+              filename: 'bundle.js',
+            },
+            module: {
+              rules: [
+                {
+                  test: /\.(js|jsx)$/,
+                  exclude: /node_modules/,
+                  use: {
+                    loader: 'babel-loader',
+                    options: {
+                      presets: ['@babel/preset-env', '@babel/preset-react'],
+                    },
+                  },
+                },
+              ],
+            },
+            resolve: {
+              alias: {
+                'react-native$': 'react-native-web',
+              },
+              extensions: ['.web.js', '.js'],
+            },
+            plugins: [
+              new HtmlWebpackPlugin({
+                template: './public/index.html',
+              }),
+            ],
+          };
+          EOL
+      - name: Create HTML template
+        script: |
+          mkdir -p public
+          cat > public/index.html << 'EOL'
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="UTF-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+              <title>React Native Web App</title>
+              <style>
+                html, body, #root { height: 100%; }
+              </style>
+            </head>
+            <body>
+              <div id="root"></div>
+            </body>
+          </html>
+          EOL
+      - name: Build Web
+        script: npx webpack --mode production
+    artifacts:
+      - dist/**
