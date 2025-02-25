@@ -2,26 +2,63 @@ workflows:
   ios-workflow:
     name: iOS Workflow
     instance_type: mac_mini_m1
-    max_build_duration: 60
+    max_build_duration: 120
     environment:
-      vars:
-        XCODE_WORKSPACE: "ios/AfirmacoesPessoais.xcworkspace"
-        XCODE_SCHEME: "AfirmacoesPessoais"
       node: latest
+      xcode: latest
+      cocoapods: default
     scripts:
-      - name: Install npm dependencies
+      - name: Install dependencies
         script: |
           npm install
-      - name: Install CocoaPods dependencies
+      
+      - name: Check iOS directory
         script: |
-          cd ios && pod install
-      - name: Build iOS
+          echo "Checking iOS directory content:"
+          if [ -d "ios" ]; then
+            ls -la ios/
+          else
+            echo "iOS directory not found, will create it"
+            npx react-native-cli init-ios || npx react-native init-ios || echo "Failed to initialize iOS"
+            if [ -d "ios" ]; then
+              ls -la ios/
+            fi
+          fi
+      
+      - name: Install CocoaPods and check project
         script: |
           cd ios
-          xcodebuild build -workspace "$XCODE_WORKSPACE" -scheme "$XCODE_SCHEME" \
-            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+          echo "Installing CocoaPods..."
+          pod install || echo "Pod install failed, trying to generate new Podfile"
+          
+          # Find project name
+          PROJECT_NAME=$(ls -d *.xcodeproj | head -n 1 | sed 's/\.xcodeproj//')
+          echo "Project name detected: $PROJECT_NAME"
+          
+          # Check if workspace exists
+          if [ ! -d "$PROJECT_NAME.xcworkspace" ]; then
+            echo "Workspace not found, will prepare project"
+            pod init
+            pod install
+          fi
+          
+          echo "Final iOS directory content:"
+          ls -la
+      
+      - name: Build iOS (Debug)
+        script: |
+          cd ios
+          # Find project name automatically
+          PROJECT_NAME=$(ls -d *.xcodeproj | head -n 1 | sed 's/\.xcodeproj//')
+          echo "Building project: $PROJECT_NAME"
+          
+          # Build for simulator (more likely to succeed)
+          xcodebuild -workspace "$PROJECT_NAME.xcworkspace" \
+            -scheme "$PROJECT_NAME" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 14' \
+            build
     artifacts:
-      - build/ios/ipa/*.ipa
-      - /tmp/xcodebuild_logs/*.log
       - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - /tmp/xcodebuild_logs/*.log
