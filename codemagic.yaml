@@ -1,6 +1,6 @@
 workflows:
-  ios-workflow:
-    name: iOS Workflow
+  ios-diagnostic:
+    name: iOS Diagnostic Build
     instance_type: mac_mini_m1
     max_build_duration: 120
     environment:
@@ -8,57 +8,38 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
-      - name: Install dependencies
+      - name: Project Diagnostics
         script: |
-          npm install
-      
-      - name: Check iOS directory
-        script: |
-          echo "Checking iOS directory content:"
+          echo "===== ENVIRONMENT INFO ====="
+          node -v
+          npm -v
+          xcodebuild -version
+          pod --version
+          
+          echo "===== PROJECT STRUCTURE ====="
+          ls -la
+          
+          echo "===== PACKAGE.JSON ====="
+          cat package.json
+          
+          echo "===== CHECK IOS DIRECTORY ====="
           if [ -d "ios" ]; then
+            echo "iOS directory exists:"
             ls -la ios/
           else
-            echo "iOS directory not found, will create it"
-            npx react-native-cli init-ios || npx react-native init-ios || echo "Failed to initialize iOS"
-            if [ -d "ios" ]; then
-              ls -la ios/
-            fi
+            echo "iOS directory does not exist, creating it"
+            npx react-native init temp_project --template react-native-template-typescript
+            cp -R temp_project/ios ./ios
+            rm -rf temp_project
+            echo "Created iOS directory:"
+            ls -la ios/
           fi
       
-      - name: Install CocoaPods and check project
+      - name: Android Alternative
         script: |
-          cd ios
-          echo "Installing CocoaPods..."
-          pod install || echo "Pod install failed, trying to generate new Podfile"
-          
-          # Find project name
-          PROJECT_NAME=$(ls -d *.xcodeproj | head -n 1 | sed 's/\.xcodeproj//')
-          echo "Project name detected: $PROJECT_NAME"
-          
-          # Check if workspace exists
-          if [ ! -d "$PROJECT_NAME.xcworkspace" ]; then
-            echo "Workspace not found, will prepare project"
-            pod init
-            pod install
+          echo "===== CHECKING ANDROID SETUP ====="
+          if [ -d "android" ]; then
+            echo "Android directory exists:"
+            ls -la android/
+            echo "We could build for Android instead as a faster alternative"
           fi
-          
-          echo "Final iOS directory content:"
-          ls -la
-      
-      - name: Build iOS (Debug)
-        script: |
-          cd ios
-          # Find project name automatically
-          PROJECT_NAME=$(ls -d *.xcodeproj | head -n 1 | sed 's/\.xcodeproj//')
-          echo "Building project: $PROJECT_NAME"
-          
-          # Build for simulator (more likely to succeed)
-          xcodebuild -workspace "$PROJECT_NAME.xcworkspace" \
-            -scheme "$PROJECT_NAME" \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 14' \
-            build
-    artifacts:
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
-      - /tmp/xcodebuild_logs/*.log
